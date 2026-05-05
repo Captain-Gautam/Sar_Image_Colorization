@@ -1,52 +1,99 @@
 # Unpaired and Unsupervised: A Dual-Model Framework for SAR Image Colorization and Downstream Building Verification
 
-## 📌 Project Overview
-Synthetic Aperture Radar (SAR) imagery is highly valuable as it can be captured in all weather and lighting conditions. However, SAR images are grayscale, contain complex speckle patterns, and are notoriously difficult to interpret visually. Optical images, while providing natural colors and easy interpretability, are limited by cloud cover and daylight availability.
-
-This repository implements an **unsupervised and unpaired learning framework** to translate SAR images to Optical (RGB) images. By colorizing SAR images, we bridge the gap between sensor modalities, improving human interpretability and boosting the performance of downstream tasks like building verification without relying on scarce, perfectly paired datasets.
-
 **Authors:** Jyoti Triklani, Siddhi Hirani, Gautam Prajapati  
 **Institution:** School of Engineering and Applied Science (SEAS), Ahmedabad University  
 **Course:** CSE 618 Artificial Intelligence Laboratory  
 
----
+## Project Overview
+This project presents a comprehensive deep learning pipeline for processing Synthetic Aperture Radar (SAR) images to extract meaningful topographical structures, specifically focusing on building segmentation. The pipeline consists of three sequential stages:
 
-## 🏗️ Framework Architecture
+1. **SAR Image Colorization (CycleGAN):** Converting raw, grayscale SAR images into realistic optical-like color images using generative models (ResNet-based Generators and PatchGAN Discriminators). This step bridges the domain gap.
+2. **Denoising & Refinement (DDRM):** Applying diffusion models to denoise and significantly enhance the colorized images. Uses SVD and a U-Net denoiser for higher-fidelity imagery.
+3. **Building Segmentation (U-Net):** Utilizing a U-Net trained entirely on unsupervised pseudo-masks (extracted via ResNet50 and K-Means clustering) to perform accurate building footprint segmentation without manual labels.
 
-Our dual-model approach explores two distinct generative pipelines for the SAR -> Optical translation, followed by a robust segmentation pipeline:
-
-### 1. CycleGAN (Unpaired Image Translation)
-Learns the bidirectional mapping (SAR <-> RGB) using two Generators and two Discriminators (PatchGAN). 
-* **Generators (`models.py`)**: Uses a ResNet-based architecture (initially 9 blocks, optimized down to 5/7 blocks to prevent overfitting and adapt to hardware constraints).
-* **Losses (`cyclegan_r9.py`)**: Combines Adversarial Loss, Cycle-Consistency Loss (reconstruction), and Identity Loss (to maintain color/brightness).
-
-### 2. DDRM (Denoising Diffusion Restoration Model)
-As an alternative/enhancement, we explored OpenAI's pretrained guided diffusion model (LSUN Churches dataset). 
-* The CycleGAN output undergoes a forward diffusion process (adding Gaussian noise).
-* A U-Net denoiser estimates the clean image at each iteration, utilizing Singular Value Decomposition (SVD) to combine input-guided range space with diffusion-hallucinated null space.
-
-### 3. Downstream Building Verification (U-Net)
-Evaluates the practical utility of the generated images.
-* Uses a **U-Net** architecture trained entirely on **pseudo-masks** (no manual ground truth required).
-* Pixel features are extracted via a pretrained ResNet50, clustered using K-Means to identify buildings, and subsequently refined by the U-Net to output clean segmentation maps.
-
----
-
-## 📊 Dataset
-The models are trained and evaluated on **Sentinel-1 (SAR)** and **Sentinel-2 (Optical)** image pairs, segregated by terrain:
-* **Categories:** Agriculture, Barrenland, Urban, Grassland.
-* **Volume:** 4,000 images per category per modality -> **16,000 total images**.
-* **Resolution:** 256x256 pixels.
-* **Dataset Split:** The data is systematically divided into a **70% Training**, **15% Validation**, and **15% Testing** split to ensure robust model evaluation and prevent data leakage.
-* *Note: While the dataset contains pairs, the models are trained in an unpaired manner to simulate real-world constraints.*
-
----
-
-## ⚙️ Repository Structure
+## Data Directories, Dataset Split & Characteristics
+The framework is trained and evaluated on **Sentinel-1 (SAR)** and **Sentinel-2 (Optical)** image pairs originally segregated into four terrain categories: Agriculture, Barrenland, Urban, and Grassland.
+- **Volume**: 4,000 images per category per modality (**16,000 total images** at `256x256` resolution).
+- **Split**: The dataset utilizes a strict **70%, 15%, 15% split** for training, validation, and testing.
 
 ```text
-├── cyclegan_r9.py       # Main training and validation script for the CycleGAN model
-├── models.py            # PyTorch implementation of GeneratorResNet and Discriminator (PatchGAN)
-├── datasets.py          # Custom PyTorch Dataset class for loading unaligned A/B domain images
-├── utils.py             # ReplayBuffer, LR Schedulers, and metric calculators (PSNR, SSIM, LPIPS)
-└── README.md            # Project documentation
+data/
+└── sar_optical_image/
+    ├── train/              # 70% of the dataset
+    │   ├── A/              # Input SAR images
+    │   └── B/              # Target Optical images / Masks
+    ├── val/                # 15% of the dataset
+    │   ├── A/
+    │   └── B/
+    └── test/               # 15% of the dataset
+        ├── A/
+        └── B/
+```
+
+## Codebase Structure
+- `cyclegan_r9.py` - Core script for training the SAR to Optical image colorization models.
+- `diffusion.py` - Implements the diffusion model for denoising and high-resolution refinement.
+- `building_segmentation01.py` - Script dedicated to training and evaluating the building segmentation network.
+- `models.py` - Contains the neural network architectures used throughout the pipeline.
+- `datasets.py` - Pytorch Dataset and DataLoader classes handling the 70/15/15 splits and augmentations.
+- `utils.py` - Helper functions for metrics, checkpointing, and image visualization.
+
+## Installation
+
+1. **Navigate to the project directory:**
+   ```bash
+   cd SAR_CODE
+   ```
+
+2. **Create a virtual environment (Recommended):**
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # Windows: venv\Scripts\activate
+   ```
+
+3. **Install standard dependencies:**
+   Ensure you install compatible versions of PyTorch (ideally with CUDA support for GPU acceleration).
+   ```bash
+   pip install torch torchvision
+   pip install numpy pandas matplotlib opencv-python pillow tqdm
+   ```
+
+## Usage
+
+### Phase 1: SAR to Optical Colorization
+Begin by training the domain translation model to convert SAR inputs into optical pseudo-images.
+```bash
+python cyclegan_r9.py
+```
+
+### Phase 2: Denoising and Sharpening
+Once colorized, use the diffusion model to refine the generated images, increasing sharpness and removing structural hallucinations or noise.
+```bash
+python diffusion.py
+```
+
+### Phase 3: Building Segmentation
+Finally, run the segmentation model on the refined optical images to detect and mask building footprints.
+```bash
+python building_segmentation01.py
+```
+
+## Experimental Results
+
+The framework was evaluated on 200 test samples, with performance metrics for both domain translation and building segmentation:
+
+### Quantitative Results for SAR-to-Optical Translation
+| Model | PSNR (dB) | SSIM |
+| :--- | :--- | :--- |
+| **CycleGAN (7 Residual Blocks)** | `10.33 ± 1.28` | `0.104 ± 0.029` |
+| **CycleGAN (5 Residual Blocks)** | `9.48 ± 1.66` | `0.027 ± 0.029` |
+
+*Note: PSNR and SSIM values are lower than paired tasks, which is expected due to the fundamental domain gap, lack of pixel-wise correspondence in unpaired training, and the one-to-many mapping complexity.*
+
+### Denoising (DDRM)
+The DDRM successfully cleans up adversarial training irregularities and removes color bleeding artifacts while preserving semantic content, drastically improving texture consistency and sharpness.
+
+### Building Segmentation
+Using the fully unsupervised pseudo-labeling and U-Net architecture, the segmentation yielded highly competitive results without any manual annotations:
+- **IoU:** `0.763 ± 0.045`
+- **Dice Coefficient:** `0.865 ± 0.038`
